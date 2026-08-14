@@ -1,13 +1,21 @@
-// Mock destination catalog. No real flight/hotel API is wired up yet —
-// prices and availability here are illustrative, not live quotes.
+// Destination catalog.
+//
+// `hotelPricePerNight` is still illustrative mock data — no hotel API is wired
+// up. Flight prices are NOT stored here: they are fetched live from
+// Travelpayouts via src/providers/travelpayouts.js using the `iata` code below,
+// with `fallbackFlightPrice` used only when that lookup is unavailable.
+const ORIGIN_IATA = process.env.ORIGIN_IATA || "IST";
+
 const destinations = [
   {
     id: "santorini",
     name: "Santorini",
     country: "Yunanistan",
+    iata: "JTR",
     tagline: "Ege'nin mavi tonları",
     tags: ["deniz", "ada", "romantik", "gunbatimi"],
-    basePricePerNight: 5567,
+    hotelPricePerNight: 3400,
+    fallbackFlightPrice: 4300,
     currency: "TRY",
     directFlight: true,
     hotelStars: 4,
@@ -19,9 +27,11 @@ const destinations = [
     id: "lizbon",
     name: "Lizbon",
     country: "Portekiz",
+    iata: "LIS",
     tagline: "Pastel sokaklar, Atlantik esintisi",
     tags: ["sehir", "tarihi", "kultur"],
-    basePricePerNight: 5250,
+    hotelPricePerNight: 2900,
+    fallbackFlightPrice: 6800,
     currency: "TRY",
     directFlight: true,
     hotelStars: 4,
@@ -33,9 +43,11 @@ const destinations = [
     id: "kapadokya",
     name: "Kapadokya",
     country: "Turkiye",
+    iata: "NAV",
     tagline: "Gokyuzunde balonlar",
     tags: ["doga", "macera", "balon"],
-    basePricePerNight: 4663,
+    hotelPricePerNight: 3100,
+    fallbackFlightPrice: 2400,
     currency: "TRY",
     directFlight: true,
     hotelStars: 5,
@@ -47,9 +59,11 @@ const destinations = [
     id: "antalya",
     name: "Antalya",
     country: "Turkiye",
+    iata: "AYT",
     tagline: "Deniz kenarinda hafta sonu",
     tags: ["deniz", "plaj", "butce-dostu"],
-    basePricePerNight: 2125,
+    hotelPricePerNight: 1600,
+    fallbackFlightPrice: 1900,
     currency: "TRY",
     directFlight: true,
     hotelStars: 4,
@@ -61,9 +75,11 @@ const destinations = [
     id: "barcelona",
     name: "Barcelona",
     country: "Ispanya",
+    iata: "BCN",
     tagline: "Sehir, plaj ve gece hayati bir arada",
     tags: ["sehir", "deniz", "kultur"],
-    basePricePerNight: 5740,
+    hotelPricePerNight: 3300,
+    fallbackFlightPrice: 5900,
     currency: "TRY",
     directFlight: true,
     hotelStars: 4,
@@ -75,9 +91,11 @@ const destinations = [
     id: "split",
     name: "Split",
     country: "Hirvatistan",
+    iata: "SPU",
     tagline: "Adriyatik'te hafta sonu kacamagi",
     tags: ["deniz", "sehir", "hafta-sonu"],
-    basePricePerNight: 3900,
+    hotelPricePerNight: 2400,
+    fallbackFlightPrice: 4600,
     currency: "TRY",
     directFlight: false,
     hotelStars: 4,
@@ -89,9 +107,11 @@ const destinations = [
     id: "roma",
     name: "Roma",
     country: "Italya",
+    iata: "FCO",
     tagline: "Tarihin icinde bir sehir",
     tags: ["sehir", "tarihi", "kultur"],
-    basePricePerNight: 5100,
+    hotelPricePerNight: 3000,
+    fallbackFlightPrice: 4800,
     currency: "TRY",
     directFlight: true,
     hotelStars: 4,
@@ -101,4 +121,4 @@ const destinations = [
   },
 ];
 
-module.exports = { destinations };
+module.exports = { destinations, ORIGIN_IATA };

@@ -14,10 +14,14 @@ onu besleyen Express backend'i.
   çalışmıyorsa veya zaman aşımına uğrarsa backend otomatik olarak eski kural tabanlı
   ayrıştırıcıya (`server/src/matching.js`, ay/gün/anahtar kelime eşleştirme) düşer —
   uygulama hiçbir zaman çökmez, sadece cevap kalitesi düşer.
-- **Uçuş/otel fiyatları mock**: Gerçek bir uçuş/otel arama API'sine (Amadeus, Duffel,
-  Booking.com vb.) bağlı değil çünkü öyle bir erişimin yoktu. `server/src/data/destinations.js`
-  içindeki fiyatlar örnek amaçlı. İleride gerçek bir API anahtarın olursa o dosyadaki
-  veri kaynağını değiştirip aynı arayüzü koruyarak bağlayabiliriz.
+- **Uçuş fiyatları gerçek**: Travelpayouts (Aviasales) Data API'sinden canlı
+  gidiş-dönüş fiyatı çekiliyor (`server/src/providers/travelpayouts.js`). Token
+  girilmemişse veya API cevap vermezse katalogdaki tahmini fiyata düşer ve
+  arayüzde "(tahmini)" olarak işaretlenir — yani hiçbir zaman uydurma fiyatı
+  gerçekmiş gibi göstermez.
+- **Otel fiyatları hâlâ tahmini**: Bir otel API'si bağlı değil.
+  `server/src/data/destinations.js` içindeki `hotelPricePerNight` örnek veridir.
+  Arayüzde uçuş ve otel kalemleri ayrı gösterilir, hangisinin gerçek olduğu bellidir.
 - **Kullanıcı girişi yok**: Tek kullanıcılı demo (Ayşe). Auth eklemek istersen
   backend'e kolayca eklenecek şekilde yapılandırıldı.
 - Görsellerde `picsum.photos` üzerinden placeholder fotoğraflar kullanılıyor
@@ -51,6 +55,24 @@ OLLAMA_MODEL=gemma4:31b-cloud
 ```
 
 Ollama çalışmıyorsa uygulama hata vermez, sadece eski kural tabanlı cevaplara döner.
+
+### 0.5) Uçuş fiyatı API anahtarını gir (opsiyonel)
+
+Canlı uçuş fiyatları için ücretsiz bir Travelpayouts hesabı gerekiyor:
+
+1. [travelpayouts.com](https://www.travelpayouts.com/) üzerinden kaydol (ücretsiz).
+2. Profil > **API token** bölümünden token'ı kopyala.
+3. `server/.env` dosyasında ilgili satırı doldur:
+
+```
+TRAVELPAYOUTS_TOKEN=buraya_kendi_tokenin
+```
+
+Token'ı repoya koyma — `.env` zaten `.gitignore` içinde. Boş bırakırsan uygulama
+çalışmaya devam eder, fiyatlar sadece "(tahmini)" olarak gösterilir.
+
+Backend ayakta mı ve token'ı görüyor mu diye kontrol:
+`http://localhost:4000/api/health` → `flightApi.configured` alanı `true` olmalı.
 
 ### 1) Backend'i başlat
 
@@ -90,9 +112,12 @@ npx expo start
 ## Bilinen sınırlamalar
 
 - Gerçek ödeme/rezervasyon akışı yok.
-- Gerçek uçuş/otel fiyat API'si bağlı değil; fiyatlar `destinations.js`'deki
-  sabit gecelik ücretten hesaplanıyor. LLM sadece hangi destinasyonun uygun
-  olduğuna karar veriyor, fiyat uydurmuyor.
+- Otel fiyatları hâlâ tahmini (otel API'si bağlı değil). Uçuş fiyatları canlı.
+- LLM sadece hangi destinasyonun uygun olduğuna karar veriyor; fiyatları
+  görmüyor ve hesaplamıyor, fiyatlar backend'de canlı veriden ekleniyor.
+- Destinasyon kataloğu sabit (7 şehir). Travelpayouts rota fiyatı veriyor ama
+  "dünyadaki tüm şehirler" araması yapmıyor — yeni şehir eklemek için
+  `destinations.js`'e IATA koduyla eklemen yeterli.
 - Tek kullanıcı, giriş ekranı yok.
 - Yerel LLM'in hızı/kalitesi tamamen senin çalıştırdığın modele bağlı;
   `OLLAMA_TIMEOUT_MS` (varsayılan 45sn) içinde cevap gelmezse kural tabanlı

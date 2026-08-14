@@ -34,7 +34,7 @@ export function DestinationDetailScreen({ route, navigation }) {
     setError(null);
     try {
       const nights = prefill?.nights || 2;
-      const priceLabel = prefill?.priceLabel || `₺${destination.basePricePerNight.toLocaleString("tr-TR")}'den`;
+      const priceLabel = prefill?.priceLabel || `Uçuş ${destination.flightFromLabel}'den`;
       await api.createTrip({
         destinationId: destination.id,
         title: `${destination.name} Kaçamağı`,
@@ -93,8 +93,16 @@ export function DestinationDetailScreen({ route, navigation }) {
             </View>
           </View>
 
-          <Text style={styles.priceLabel}>Gecelik başlangıç fiyatı</Text>
-          <Text style={styles.price}>₺{destination.basePricePerNight.toLocaleString("tr-TR")}</Text>
+          <Text style={styles.priceLabel}>
+            Gidiş-dönüş uçuş
+            {destination.flightPriceSource === "live" ? " (canlı fiyat)" : " (tahmini)"}
+          </Text>
+          <Text style={styles.price}>{destination.flightFromLabel}'den</Text>
+
+          <Text style={styles.priceLabel}>Gecelik otel (tahmini)</Text>
+          <Text style={styles.priceSecondary}>
+            ₺{destination.hotelPricePerNight.toLocaleString("tr-TR")}
+          </Text>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -144,6 +152,7 @@ const styles = StyleSheet.create({
   tagText: { color: colors.textSecondary, fontSize: 12.5 },
   priceLabel: { color: colors.textMuted, fontSize: 12, marginTop: spacing.xl },
   price: { color: colors.accentTeal, fontSize: 24, fontWeight: "800", marginTop: 2 },
+  priceSecondary: { color: colors.textPrimary, fontSize: 17, fontWeight: "700", marginTop: 2 },
   errorText: { color: colors.danger, fontSize: 12.5, marginTop: spacing.md },
   cta: {
     marginTop: spacing.xl,

@@ -2,6 +2,7 @@ const express = require("express");
 const { destinations } = require("../data/destinations");
 const { searchRoutes, applyFilters, filtersFromChips } = require("../matching");
 const { ollamaChat } = require("../llm");
+const { buildPricedRoutes } = require("../pricing");
 
 const router = express.Router();
 
@@ -13,7 +14,7 @@ function catalogForPrompt(pool) {
     tagline: d.tagline,
     tags: d.tags,
     season: d.season,
-    basePricePerNight: d.basePricePerNight,
+    hotelPricePerNight: d.hotelPricePerNight,
     directFlight: d.directFlight,
     hotelStars: d.hotelStars,
   }));
@@ -25,8 +26,10 @@ Sana JSON formatında bir destinasyon kataloğu verilecek. Kullanıcının mesaj
 - Eğer bir seyahat/rota isteği varsa, SADECE verilen katalogdaki id'lerden en uygun EN FAZLA 3 tanesini seç. Katalogda olmayan bir yer uydurma.
 - Eğer mesaj seyahatle ilgili değilse (genel sohbet, soru, vb.) destinationIds dizisini boş bırak, sadece normal ve yardımcı bir cevap ver.
 Cevabını SADECE şu JSON şemasında ver, başka hiçbir metin, açıklama veya markdown ekleme:
-{"reply": "kullanıcıya gösterilecek kısa, samimi Türkçe cevap", "destinationIds": ["id1","id2"], "nights": 2}
-"nights": kullanıcının belirttiği gece sayısı; belirtmediyse 2 kullan.`;
+{"reply": "kullanıcıya gösterilecek kısa, samimi Türkçe cevap", "destinationIds": ["id1","id2"], "nights": 2, "month": "mayis"}
+"nights": kullanıcının belirttiği gece sayısı; belirtmediyse 2 kullan.
+"month": kullanıcının belirttiği ay; Türkçe küçük harf ve şapkasız yaz (ocak, subat, mart, nisan, mayis, haziran, temmuz, agustos, eylul, ekim, kasim, aralik). Ay belirtilmediyse null bırak.
+Fiyatları sen hesaplama ve uydurma; fiyatlar sistem tarafından canlı uçuş verisiyle eklenir.`;
 }
 
 function extractJson(raw) {
@@ -35,23 +38,10 @@ function extractJson(raw) {
   return JSON.parse(match[0]);
 }
 
-function buildRoutes(chosenDestinations, nights) {
-  return chosenDestinations.map((dest) => {
-    const price = Math.round(dest.basePricePerNight * nights);
-    return {
-      destinationId: dest.id,
-      name: dest.name,
-      country: dest.country,
-      tagline: dest.tagline,
-      image: dest.image,
-      nights,
-      price,
-      priceLabel: `₺${price.toLocaleString("tr-TR")}`,
-      directFlight: dest.directFlight,
-      hotelStars: dest.hotelStars,
-    };
-  });
-}
+const VALID_MONTHS = new Set([
+  "ocak", "subat", "mart", "nisan", "mayis", "haziran",
+  "temmuz", "agustos", "eylul", "ekim", "kasim", "aralik",
+]);
 
 async function llmSearch({ text, chipFilters, history }) {
   const filters = filtersFromChips(chipFilters);
@@ -72,10 +62,15 @@ async function llmSearch({ text, chipFilters, history }) {
     .filter(Boolean)
     .slice(0, 3);
 
+  const month =
+    typeof parsed.month === "string" && VALID_MONTHS.has(parsed.month.toLowerCase())
+      ? parsed.month.toLowerCase()
+      : null;
+
   return {
     source: "llm",
     reply: typeof parsed.reply === "string" && parsed.reply.trim() ? parsed.reply.trim() : "Buyur, dinliyorum.",
-    routes: buildRoutes(chosen, nights),
+    routes: await buildPricedRoutes(chosen, nights, month),
   };
 }
 
@@ -93,7 +88,7 @@ router.post("/search", async (req, res) => {
     });
     return res.json(result);
   } catch (llmError) {
-    const fallback = searchRoutes({ text, chipFilters });
+    const fallback = await searchRoutes({ text, chipFilters });
     return res.json({
       source: "rule",
       reply:

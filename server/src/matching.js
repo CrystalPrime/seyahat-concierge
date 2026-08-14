@@ -1,4 +1,5 @@
 const { destinations } = require("./data/destinations");
+const { buildPricedRoutes } = require("./pricing");
 
 const MONTHS = [
   "ocak", "subat", "şubat", "mart", "nisan", "mayis", "mayıs", "haziran",
@@ -81,12 +82,20 @@ const CHIP_FILTER_MAP = {
   "5-yildizli-otel": "stars-5",
 };
 
+// Rough pre-API cost proxy, used only to rank/filter before live prices are
+// fetched. Assumes a two-night stay.
+function estimatedCost(dest) {
+  return dest.fallbackFlightPrice + dest.hotelPricePerNight * 2;
+}
+
 function applyFilters(items, filters) {
   let result = items;
   if (filters.has("budget")) {
-    result = result.filter((d) => d.basePricePerNight <= 4700).length
-      ? result.filter((d) => d.basePricePerNight <= 4700)
-      : [...result].sort((a, b) => a.basePricePerNight - b.basePricePerNight).slice(0, 3);
+    const BUDGET_CEILING = 9000;
+    const affordable = result.filter((d) => estimatedCost(d) <= BUDGET_CEILING);
+    result = affordable.length
+      ? affordable
+      : [...result].sort((a, b) => estimatedCost(a) - estimatedCost(b)).slice(0, 3);
   }
   if (filters.has("direct")) {
     const directOnly = result.filter((d) => d.directFlight);
@@ -112,7 +121,7 @@ function scoreDestination(dest, { month, tags }) {
   return score;
 }
 
-function searchRoutes({ text, chipFilters = [] }) {
+async function searchRoutes({ text, chipFilters = [] }) {
   const normText = normalize(text || "");
   const month = detectMonth(normText);
   const nights = detectNights(normText);
@@ -131,21 +140,7 @@ function searchRoutes({ text, chipFilters = [] }) {
 
   const top = (scored.some((s) => s.score > 0) ? scored.filter((s) => s.score > 0) : scored).slice(0, 3);
 
-  const routes = top.map(({ dest }) => {
-    const price = Math.round(dest.basePricePerNight * nights);
-    return {
-      destinationId: dest.id,
-      name: dest.name,
-      country: dest.country,
-      tagline: dest.tagline,
-      image: dest.image,
-      nights,
-      price,
-      priceLabel: `₺${price.toLocaleString("tr-TR")}`,
-      directFlight: dest.directFlight,
-      hotelStars: dest.hotelStars,
-    };
-  });
+  const routes = await buildPricedRoutes(top.map(({ dest }) => dest), nights, month);
 
   return {
     parsed: { month, nights, tags, filters: [...filters] },

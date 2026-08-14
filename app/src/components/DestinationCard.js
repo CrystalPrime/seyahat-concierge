@@ -17,7 +17,10 @@ export function DestinationCard({ destination, featured, onPress }) {
       <View style={styles.overlay}>
         <Text style={[styles.name, featured && styles.nameFeatured]}>{destination.name}</Text>
         <Text style={styles.tagline} numberOfLines={1}>{destination.tagline}</Text>
-        <Text style={styles.price}>₺{destination.basePricePerNight.toLocaleString("tr-TR")}'den</Text>
+        <Text style={styles.price}>
+          Uçuş {destination.flightFromLabel}'den
+          {destination.flightPriceSource === "live" ? "" : " (tahmini)"}
+        </Text>
       </View>
     </Pressable>
   );

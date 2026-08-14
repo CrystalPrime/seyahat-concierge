@@ -23,6 +23,10 @@ export function RouteCard({ route, onPress }) {
           </View>
         </View>
         <Text style={styles.price}>{route.priceLabel}</Text>
+        <Text style={styles.priceBreakdown}>
+          Uçuş {route.flightPriceLabel}
+          {route.flightPriceSource === "live" ? " (canlı)" : " (tahmini)"} + otel {route.hotelPriceLabel}
+        </Text>
       </View>
     </Pressable>
   );
@@ -75,5 +79,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 13,
     marginTop: spacing.sm,
+  },
+  priceBreakdown: {
+    color: colors.textMuted,
+    fontSize: 9.5,
+    lineHeight: 13,
+    marginTop: 2,
   },
 });
