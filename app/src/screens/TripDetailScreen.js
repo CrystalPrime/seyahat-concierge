@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
@@ -12,6 +12,7 @@ export function TripDetailScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [confirmVisible, setConfirmVisible] = useState(false);
 
   useEffect(() => {
     api
@@ -33,24 +34,20 @@ export function TripDetailScreen({ route, navigation }) {
     }
   }, [tripId]);
 
-  const deleteTrip = useCallback(() => {
-    Alert.alert("Seyahati sil", "Bu seyahati silmek istediğine emin misin?", [
-      { text: "Vazgeç", style: "cancel" },
-      {
-        text: "Sil",
-        style: "destructive",
-        onPress: async () => {
-          setBusy(true);
-          try {
-            await api.deleteTrip(tripId);
-            navigation.goBack();
-          } catch (e) {
-            setError(e.message);
-            setBusy(false);
-          }
-        },
-      },
-    ]);
+  // Alert.alert is a no-op on react-native-web, so the confirmation is a Modal
+  // to keep the flow identical on web, iOS and Android.
+  const confirmDelete = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.deleteTrip(tripId);
+      setConfirmVisible(false);
+      navigation.goBack();
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+      setConfirmVisible(false);
+    }
   }, [tripId, navigation]);
 
   if (loading) {
@@ -104,12 +101,52 @@ export function TripDetailScreen({ route, navigation }) {
             </Pressable>
           ) : null}
 
-          <Pressable style={styles.deleteButton} onPress={deleteTrip} disabled={busy}>
+          <Pressable
+            style={styles.deleteButton}
+            onPress={() => setConfirmVisible(true)}
+            disabled={busy}
+          >
             <Ionicons name="trash-outline" size={15} color={colors.danger} />
             <Text style={styles.deleteText}>Seyahati sil</Text>
           </Pressable>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={confirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Seyahati sil</Text>
+            <Text style={styles.modalBody}>
+              "{trip.title}" seyahatini silmek istediğine emin misin? Bu işlem geri alınamaz.
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalButton, styles.modalCancel]}
+                onPress={() => setConfirmVisible(false)}
+                disabled={busy}
+              >
+                <Text style={styles.modalCancelText}>Vazgeç</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalButton, styles.modalDelete]}
+                onPress={confirmDelete}
+                disabled={busy}
+              >
+                {busy ? (
+                  <ActivityIndicator color={colors.textPrimary} />
+                ) : (
+                  <Text style={styles.modalDeleteText}>Sil</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -156,4 +193,34 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   deleteText: { color: colors.danger, fontSize: 13, fontWeight: "600" },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.xl,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 340,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+  },
+  modalTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: "800" },
+  modalBody: { color: colors.textSecondary, fontSize: 13.5, lineHeight: 19, marginTop: spacing.sm },
+  modalActions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg },
+  modalButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalCancel: { backgroundColor: colors.surfaceRaised },
+  modalCancelText: { color: colors.textPrimary, fontWeight: "700", fontSize: 13.5 },
+  modalDelete: { backgroundColor: colors.danger },
+  modalDeleteText: { color: colors.textPrimary, fontWeight: "800", fontSize: 13.5 },
 });

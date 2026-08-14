@@ -37,6 +37,7 @@ export function ConciergeScreen({ navigation, route }) {
   const [error, setError] = useState(null);
   const lastQuery = useRef("");
   const listRef = useRef(null);
+  const inputRef = useRef(null);
 
   const runSearch = useCallback(async (text, filters, history) => {
     setLoading(true);
@@ -63,6 +64,9 @@ export function ConciergeScreen({ navigation, route }) {
     const history = messages.slice(-6).map((m) => ({ role: m.role, content: m.text }));
     setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text }]);
     setInputText("");
+    // Keep the keyboard/caret in the field so the user can type the next
+    // message without tapping the input again.
+    inputRef.current?.focus();
     runSearch(text, activeFilters, history);
   }, [inputText, activeFilters, runSearch, messages]);
 
@@ -161,6 +165,7 @@ export function ConciergeScreen({ navigation, route }) {
             <Ionicons name="mic-outline" size={18} color={colors.textSecondary} />
           </Pressable>
           <TextInput
+            ref={inputRef}
             style={styles.input}
             placeholder="Seyahatini anlat..."
             placeholderTextColor={colors.textMuted}
@@ -168,6 +173,7 @@ export function ConciergeScreen({ navigation, route }) {
             onChangeText={setInputText}
             onSubmitEditing={onSend}
             returnKeyType="send"
+            blurOnSubmit={false}
           />
           <Pressable style={styles.sendButton} onPress={onSend} accessibilityLabel="Gönder">
             <Ionicons name="arrow-up" size={18} color={colors.background} />
