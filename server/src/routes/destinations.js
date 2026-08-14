@@ -1,5 +1,5 @@
 const express = require("express");
-const { getCatalog } = require("../catalog");
+const { getCatalog, findDestinationById } = require("../catalog");
 const { attachFlightFromPrices } = require("../pricing");
 
 const router = express.Router();
@@ -21,8 +21,7 @@ router.get("/", async (req, res) => {
 });
 
 router.get("/:id", async (req, res) => {
-  const catalog = await getCatalog();
-  const dest = catalog.find((d) => d.id === req.params.id);
+  const dest = await findDestinationById(req.params.id);
   if (!dest) return res.status(404).json({ error: "Destinasyon bulunamadı" });
   const [withPrice] = await attachFlightFromPrices([dest]);
   res.json({ destination: withPrice });

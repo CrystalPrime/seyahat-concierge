@@ -97,9 +97,17 @@ export function DestinationDetailScreen({ route, navigation }) {
 
           <Text style={styles.priceLabel}>
             Gidiş-dönüş uçuş
-            {destination.flightPriceSource === "live" ? " (canlı fiyat)" : " (tahmini)"}
+            {destination.flightPriceSource === "live"
+              ? " (canlı fiyat)"
+              : destination.flightPriceSource === "unavailable"
+                ? ""
+                : " (tahmini)"}
           </Text>
-          <Text style={styles.price}>{destination.flightFromLabel}'den</Text>
+          <Text style={styles.price}>
+            {destination.flightPriceSource === "unavailable"
+              ? destination.flightFromLabel
+              : `${destination.flightFromLabel}'den`}
+          </Text>
 
           <Text style={styles.priceLabel}>Gecelik otel (tahmini)</Text>
           <Text style={styles.priceSecondary}>

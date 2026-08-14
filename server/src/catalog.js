@@ -124,7 +124,21 @@ async function resolveDestinations(queries) {
   const catalog = await getCatalog();
 
   const resolved = await Promise.all(
-    queries.slice(0, 5).map(async (q) => {
+    queries.slice(0, 5).map(async (raw) => {
+      // Accepts both the {name, iata, country} objects the prompt asks for and
+      // a plain string, so an older model output still works.
+      const q =
+        typeof raw === "string"
+          ? { name: raw }
+          : {
+              name: typeof raw?.name === "string" ? raw.name : "",
+              iata: typeof raw?.iata === "string" ? raw.iata : undefined,
+              countryCode:
+                typeof raw?.country === "string" && raw.country.length === 2
+                  ? raw.country.toUpperCase()
+                  : undefined,
+            };
+
       const city = await resolveCity(q);
       if (!city) return null;
 
@@ -159,4 +173,30 @@ async function resolveDestinations(queries) {
   return resolved.filter((d) => d && !seen.has(d.iata) && seen.add(d.iata));
 }
 
-module.exports = { getCatalog, clearCatalogCache, resolveDestinations, ORIGIN_IATA };
+/**
+ * Finds a destination by the id used in route cards. Ids generated for cities
+ * outside the cached catalog carry their IATA code as the last segment
+ * ("milan-mil"), so they can be rebuilt on demand — otherwise tapping such a
+ * card would 404.
+ */
+async function findDestinationById(id) {
+  if (typeof id !== "string" || !id) return null;
+
+  const catalog = await getCatalog();
+  const known = catalog.find((d) => d.id === id);
+  if (known) return known;
+
+  const tail = id.split("-").pop();
+  if (!/^[a-z]{3}$/.test(tail || "")) return null;
+
+  const [rebuilt] = await resolveDestinations([{ iata: tail.toUpperCase() }]);
+  return rebuilt || null;
+}
+
+module.exports = {
+  getCatalog,
+  clearCatalogCache,
+  resolveDestinations,
+  findDestinationById,
+  ORIGIN_IATA,
+};

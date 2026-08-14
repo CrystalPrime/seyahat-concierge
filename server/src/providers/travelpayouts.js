@@ -12,10 +12,18 @@
 // Every failure path here returns null rather than throwing: callers fall back
 // to the catalog's fallbackFlightPrice so the app still works without a token.
 
+const fs = require("fs");
+const path = require("path");
+
 const BASE_URL = process.env.TRAVELPAYOUTS_BASE_URL || "https://api.travelpayouts.com";
 const TOKEN = process.env.TRAVELPAYOUTS_TOKEN || "";
 const CURRENCY = process.env.TRAVELPAYOUTS_CURRENCY || "try";
-const TIMEOUT_MS = Number(process.env.TRAVELPAYOUTS_TIMEOUT_MS) || 8000;
+const TIMEOUT_MS = Number(process.env.TRAVELPAYOUTS_TIMEOUT_MS) || 15000;
+// city-directions returns every route out of a city and is noticeably slower
+// than a single price lookup.
+const DIRECTIONS_TIMEOUT_MS = Number(process.env.TRAVELPAYOUTS_DIRECTIONS_TIMEOUT_MS) || 30000;
+// The reference dumps are multi-megabyte files; they need a much longer window.
+const REF_TIMEOUT_MS = Number(process.env.TRAVELPAYOUTS_REF_TIMEOUT_MS) || 120000;
 const CACHE_TTL_MS = Number(process.env.TRAVELPAYOUTS_CACHE_TTL_MS) || 30 * 60 * 1000;
 
 const cache = new Map();
@@ -143,7 +151,7 @@ async function getCityDirections({ origin }) {
 
   const params = new URLSearchParams({ origin, currency: CURRENCY });
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), DIRECTIONS_TIMEOUT_MS);
   try {
     const res = await fetch(`${BASE_URL}/v1/city-directions?${params.toString()}`, {
       headers: { "X-Access-Token": TOKEN, Accept: "application/json" },
@@ -175,7 +183,7 @@ async function getCityDirections({ origin }) {
     writeCache(key, routes);
     return routes;
   } catch (e) {
-    const reason = e.name === "AbortError" ? `timeout (${TIMEOUT_MS}ms)` : e.message;
+    const reason = e.name === "AbortError" ? `timeout (${DIRECTIONS_TIMEOUT_MS}ms)` : e.message;
     console.warn(`[travelpayouts] city-directions ${origin} başarısız: ${reason}`);
     writeCache(key, null);
     return null;
@@ -191,19 +199,79 @@ const REF_TTL_MS = 24 * 60 * 60 * 1000;
 let refPromise = null;
 let refLoadedAt = 0;
 
-async function fetchJson(url) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS * 3);
+async function fetchJson(url, { attempts = 2 } = {}) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REF_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, {
+        headers: { Accept: "application/json", "Accept-Encoding": "gzip" },
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (e) {
+      lastError = e.name === "AbortError" ? new Error(`timeout (${REF_TIMEOUT_MS}ms)`) : e;
+      if (attempt < attempts) {
+        console.warn(`[travelpayouts] ${url} denemesi ${attempt} başarısız (${lastError.message}), tekrar deneniyor`);
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastError;
+}
+
+// The reference dumps rarely change, so the trimmed index is persisted and
+// reused across restarts instead of re-downloading several megabytes.
+const REF_CACHE_PATH = path.join(__dirname, "..", "..", "data", "city-index.json");
+const REF_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+function readDiskCache() {
   try {
-    const res = await fetch(url, { headers: { Accept: "application/json" }, signal: controller.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } finally {
-    clearTimeout(timer);
+    const stat = fs.statSync(REF_CACHE_PATH);
+    if (Date.now() - stat.mtimeMs > REF_CACHE_MAX_AGE_MS) return null;
+    const raw = JSON.parse(fs.readFileSync(REF_CACHE_PATH, "utf-8"));
+    if (!Array.isArray(raw?.cities) || raw.cities.length === 0) return null;
+    console.log(`[travelpayouts] şehir indeksi diskten yüklendi: ${raw.cities.length} şehir`);
+    return buildIndex(raw.cities);
+  } catch {
+    return null;
   }
 }
 
+function writeDiskCache(entries) {
+  try {
+    fs.mkdirSync(path.dirname(REF_CACHE_PATH), { recursive: true });
+    fs.writeFileSync(REF_CACHE_PATH, JSON.stringify({ cities: entries }));
+  } catch (e) {
+    console.warn(`[travelpayouts] şehir indeksi diske yazılamadı: ${e.message}`);
+  }
+}
+
+/** @param {Array<{iata,name,country,countryCode,aliases}>} entries */
+function buildIndex(entries) {
+  const byCode = new Map();
+  const byName = new Map();
+  for (const entry of entries) {
+    byCode.set(entry.iata, entry);
+    for (const alias of entry.aliases || [entry.name]) {
+      const key = normalizeName(alias);
+      if (!key) continue;
+      // Names are ambiguous (Venice IT vs Venice FL), so every candidate is
+      // kept and the caller ranks them instead of taking whichever came first.
+      if (!byName.has(key)) byName.set(key, []);
+      byName.get(key).push(entry);
+    }
+  }
+  return { byCode, byName };
+}
+
 async function loadReferenceData() {
+  const fromDisk = readDiskCache();
+  if (fromDisk) return fromDisk;
+
   const locales = [REF_LOCALE, "en"].filter((v, i, a) => a.indexOf(v) === i);
   let lastError = null;
 
@@ -219,33 +287,30 @@ async function loadReferenceData() {
         if (c?.code) countryByCode.set(c.code, c.name || c.code);
       }
 
-      const byCode = new Map();
-      const byName = new Map();
+      const entries = [];
       for (const c of Array.isArray(cities) ? cities : []) {
         if (!c?.code || !c?.name) continue;
-        const entry = {
+        // Aliases cover every translation the dump offers, so "Londra"
+        // resolves as well as "London".
+        const aliases = [c.name, ...Object.values(c.name_translations || {})].filter(
+          (a) => typeof a === "string" && a.trim()
+        );
+        entries.push({
           iata: c.code,
           name: c.name,
           countryCode: c.country_code || null,
           country: c.country_code ? countryByCode.get(c.country_code) || null : null,
-        };
-        byCode.set(c.code, entry);
-
-        // Reverse index so the assistant can name a city we have not cached.
-        // Includes every translation the dump offers, so "Londra" resolves too.
-        const aliases = [c.name, ...Object.values(c.name_translations || {})];
-        for (const alias of aliases) {
-          if (typeof alias !== "string" || !alias.trim()) continue;
-          const key = normalizeName(alias);
-          if (!byName.has(key)) byName.set(key, entry);
-        }
+          aliases: [...new Set(aliases)],
+        });
       }
 
-      if (byCode.size === 0) throw new Error("boş şehir listesi");
+      if (entries.length === 0) throw new Error("boş şehir listesi");
+      writeDiskCache(entries);
+      const index = buildIndex(entries);
       console.log(
-        `[travelpayouts] referans veri yüklendi (${locale}): ${byCode.size} şehir, ${byName.size} isim`
+        `[travelpayouts] referans veri yüklendi (${locale}): ${index.byCode.size} şehir, ${index.byName.size} isim`
       );
-      return { byCode, byName };
+      return index;
     } catch (e) {
       lastError = e;
       console.warn(`[travelpayouts] referans veri (${locale}) alınamadı: ${e.message}`);
@@ -276,21 +341,66 @@ async function getCityIndex() {
   return refPromise;
 }
 
+const IATA_RE = /^[A-Za-z]{3}$/;
+
 /**
- * Resolves a free-form city name or IATA code to a catalog-shaped city entry.
+ * Picks the best city for an ambiguous name. "Venice" matches both VCE (Italy)
+ * and VNC (Venice, Florida); without ranking the first one in the dump wins and
+ * we end up pricing the wrong airport.
+ */
+function rankCandidates(candidates, { name, countryCode }) {
+  const wanted = normalizeName(name);
+  return [...candidates].sort((a, b) => score(b) - score(a));
+
+  function score(c) {
+    let s = 0;
+    // A hint from the assistant ("Italy") is the strongest signal.
+    if (countryCode && c.countryCode === countryCode) s += 100;
+    // Prefer a match on the city's primary name over a translation alias.
+    if (normalizeName(c.name) === wanted) s += 10;
+    return s;
+  }
+}
+
+/**
+ * Resolves a city the assistant named. An explicit IATA code is trusted when it
+ * exists in the index (or when the index is unavailable), otherwise the name is
+ * matched and ranked.
+ * @param {{name?:string, iata?:string, countryCode?:string}|string} query
  * @returns {Promise<{iata:string,name:string,country:string|null}|null>}
  */
 async function resolveCity(query) {
-  if (typeof query !== "string" || !query.trim()) return null;
-  const index = await getCityIndex();
-  if (!index) return null;
+  const q = typeof query === "string" ? { name: query } : query || {};
+  const name = typeof q.name === "string" ? q.name.trim() : "";
+  const iata = typeof q.iata === "string" && IATA_RE.test(q.iata.trim())
+    ? q.iata.trim().toUpperCase()
+    : null;
+  if (!name && !iata) return null;
 
-  const raw = query.trim();
-  if (/^[A-Za-z]{3}$/.test(raw)) {
-    const byCode = index.byCode.get(raw.toUpperCase());
-    if (byCode) return byCode;
+  const index = await getCityIndex();
+
+  // Reference data unavailable: trust a well-formed code so the feature still
+  // works. A wrong code simply returns no price and the route is dropped.
+  if (!index) {
+    return iata ? { iata, name: name || iata, country: q.country || null } : null;
   }
-  return index.byName.get(normalizeName(raw)) || null;
+
+  if (iata) {
+    const hit = index.byCode.get(iata);
+    if (hit) return hit;
+  }
+
+  // A bare 3-letter name is probably a code.
+  if (!iata && IATA_RE.test(name)) {
+    const hit = index.byCode.get(name.toUpperCase());
+    if (hit) return hit;
+  }
+
+  const candidates = index.byName.get(normalizeName(name));
+  if (!candidates || candidates.length === 0) {
+    return iata ? { iata, name: name || iata, country: q.country || null } : null;
+  }
+  return rankCandidates(candidates, { name, countryCode: q.countryCode })[0];
 }
 
 module.exports = {

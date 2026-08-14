@@ -132,14 +132,18 @@ async function buildPricedRoutes(chosenDestinations, window) {
 }
 
 /** Cheapest live flight price per destination for the Discover screen. */
+// A city resolved on the fly has no cached estimate, so when the live lookup
+// also comes back empty there is no honest number to print.
+function withFromPrice(dest, price, source) {
+  if (!price) {
+    return { ...dest, flightFromPrice: null, flightFromLabel: "Fiyat bulunamadı", flightPriceSource: "unavailable" };
+  }
+  return { ...dest, flightFromPrice: Math.round(price), flightFromLabel: formatTry(price), flightPriceSource: source };
+}
+
 async function attachFlightFromPrices(destinationList) {
   if (!isConfigured() || !destinationList.length) {
-    return destinationList.map((d) => ({
-      ...d,
-      flightFromPrice: d.fallbackFlightPrice,
-      flightFromLabel: formatTry(d.fallbackFlightPrice),
-      flightPriceSource: "estimate",
-    }));
+    return destinationList.map((d) => withFromPrice(d, d.fallbackFlightPrice, "estimate"));
   }
 
   const liveByIata = await getFlightPrices({
@@ -149,13 +153,9 @@ async function attachFlightFromPrices(destinationList) {
 
   return destinationList.map((d) => {
     const live = liveByIata[d.iata] || null;
-    const price = live ? live.cheapest.price : d.fallbackFlightPrice;
-    return {
-      ...d,
-      flightFromPrice: Math.round(price),
-      flightFromLabel: formatTry(price),
-      flightPriceSource: live ? "live" : "estimate",
-    };
+    return live
+      ? withFromPrice(d, live.cheapest.price, "live")
+      : withFromPrice(d, d.fallbackFlightPrice, "estimate");
   });
 }
 

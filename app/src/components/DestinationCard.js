@@ -18,8 +18,11 @@ export function DestinationCard({ destination, featured, onPress }) {
         <Text style={[styles.name, featured && styles.nameFeatured]}>{destination.name}</Text>
         <Text style={styles.tagline} numberOfLines={1}>{destination.tagline}</Text>
         <Text style={styles.price}>
-          Uçuş {destination.flightFromLabel}'den
-          {destination.flightPriceSource === "live" ? "" : " (tahmini)"}
+          {destination.flightPriceSource === "unavailable"
+            ? destination.flightFromLabel
+            : `Uçuş ${destination.flightFromLabel}'den${
+                destination.flightPriceSource === "live" ? "" : " (tahmini)"
+              }`}
         </Text>
       </View>
     </Pressable>
