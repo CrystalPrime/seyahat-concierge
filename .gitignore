@@ -1,0 +1,8 @@
+node_modules/
+.env
+.expo/
+dist/
+web-build/
+.DS_Store
+npm-debug.*
+server/data/trips.json
