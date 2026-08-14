@@ -10,7 +10,12 @@
 // so the app keeps working offline.
 
 const { destinations: curated, ORIGIN_IATA } = require("./data/destinations");
-const { getCityDirections, getCityIndex, isConfigured } = require("./providers/travelpayouts");
+const {
+  getCityDirections,
+  getCityIndex,
+  resolveCity,
+  isConfigured,
+} = require("./providers/travelpayouts");
 
 const MAX_DESTINATIONS = Number(process.env.CATALOG_SIZE) || 18;
 const DEFAULT_HOTEL_PRICE_PER_NIGHT = Number(process.env.DEFAULT_HOTEL_PRICE) || 2800;
@@ -70,7 +75,7 @@ async function buildLiveCatalog() {
   const built = routes
     .filter((r) => r.destination && r.destination !== ORIGIN_IATA)
     .slice(0, MAX_DESTINATIONS)
-    .map((r) => buildDestination(r, cityIndex?.get(r.destination) || null))
+    .map((r) => buildDestination(r, cityIndex?.byCode.get(r.destination) || null))
     // Drop entries we could not name at all — an "XYZ" card helps nobody.
     .filter((d) => d.name !== d.iata || d.country);
 
@@ -108,4 +113,50 @@ function clearCatalogCache() {
   cache = { value: null, expiresAt: 0 };
 }
 
-module.exports = { getCatalog, clearCatalogCache, ORIGIN_IATA };
+/**
+ * Turns free-form city names into catalog-shaped destinations, so the assistant
+ * can propose somewhere outside the cached top-N routes (e.g. New York).
+ * Names that cannot be resolved to an airport are dropped rather than guessed.
+ * @param {string[]} queries
+ */
+async function resolveDestinations(queries) {
+  if (!Array.isArray(queries) || queries.length === 0) return [];
+  const catalog = await getCatalog();
+
+  const resolved = await Promise.all(
+    queries.slice(0, 5).map(async (q) => {
+      const city = await resolveCity(q);
+      if (!city) return null;
+
+      const alreadyInCatalog = catalog.find((d) => d.iata === city.iata);
+      if (alreadyInCatalog) return alreadyInCatalog;
+
+      const known = curatedByIata.get(city.iata);
+      return {
+        id: known?.id || slugify(`${city.name}-${city.iata}`),
+        name: known?.name || city.name,
+        country: known?.country || city.country || "",
+        iata: city.iata,
+        tagline: known?.tagline || (city.country ? `${city.country} rotası` : "Seçtiğin rota"),
+        tags: known?.tags || [],
+        hotelPricePerNight: known?.hotelPricePerNight ?? DEFAULT_HOTEL_PRICE_PER_NIGHT,
+        // No cached route price for these; pricing falls back to this only if
+        // the live per-route lookup also fails, and the UI marks it estimated.
+        fallbackFlightPrice: known?.fallbackFlightPrice ?? 0,
+        currency: "TRY",
+        directFlight: known?.directFlight ?? false,
+        hotelStars: known?.hotelStars ?? DEFAULT_HOTEL_STARS,
+        editorsPick: false,
+        image: known?.image || `https://picsum.photos/seed/${city.iata.toLowerCase()}/900/700`,
+        season: known?.season || [],
+        isLive: true,
+        offCatalog: true,
+      };
+    })
+  );
+
+  const seen = new Set();
+  return resolved.filter((d) => d && !seen.has(d.iata) && seen.add(d.iata));
+}
+
+module.exports = { getCatalog, clearCatalogCache, resolveDestinations, ORIGIN_IATA };

@@ -1,5 +1,5 @@
 const { getCatalog } = require("./catalog");
-const { buildPricedRoutes } = require("./pricing");
+const { buildPricedRoutes, resolveTravelWindow } = require("./pricing");
 
 const MONTHS = [
   "ocak", "subat", "şubat", "mart", "nisan", "mayis", "mayıs", "haziran",
@@ -140,7 +140,10 @@ async function searchRoutes({ text, chipFilters = [] }) {
 
   const top = (scored.some((s) => s.score > 0) ? scored.filter((s) => s.score > 0) : scored).slice(0, 3);
 
-  const routes = await buildPricedRoutes(top.map(({ dest }) => dest), nights, month);
+  const routes = await buildPricedRoutes(
+    top.map(({ dest }) => dest),
+    resolveTravelWindow({ month, nights })
+  );
 
   return {
     parsed: { month, nights, tags, filters: [...filters] },

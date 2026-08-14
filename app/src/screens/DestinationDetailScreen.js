@@ -38,7 +38,9 @@ export function DestinationDetailScreen({ route, navigation }) {
       await api.createTrip({
         destinationId: destination.id,
         title: `${destination.name} Kaçamağı`,
-        dateLabel: `${nights} gece · tarih seçilmedi`,
+        dateLabel: prefill?.dateLabel || `${nights} gece · tarih seçilmedi`,
+        startDate: prefill?.departDate || null,
+        endDate: prefill?.returnDate || null,
         status: "draft",
         price: prefill?.price || null,
         priceLabel,

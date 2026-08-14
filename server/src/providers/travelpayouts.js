@@ -71,15 +71,17 @@ function parseOffers(offersByStops) {
  *                    direct:{price:number,airline:string|null,stops:number}|null,
  *                    currency:string}|null>}
  */
-async function getFlightPrice({ origin, destination, departMonth }) {
+async function getFlightPrice({ origin, destination, departDate, returnDate }) {
   if (!isConfigured()) return null;
 
-  const key = cacheKey(origin, destination, departMonth);
+  const key = cacheKey(origin, destination, `${departDate || "any"}|${returnDate || "any"}`);
   const cached = readCache(key);
   if (cached !== undefined) return cached;
 
+  // depart_date/return_date accept YYYY-MM or YYYY-MM-DD.
   const params = new URLSearchParams({ origin, destination, currency: CURRENCY });
-  if (departMonth) params.set("depart_date", departMonth);
+  if (departDate) params.set("depart_date", departDate);
+  if (returnDate) params.set("return_date", returnDate);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -114,11 +116,11 @@ async function getFlightPrice({ origin, destination, departMonth }) {
 }
 
 /** Looks up several destinations at once, tolerating individual failures. */
-async function getFlightPrices({ origin, destinations, departMonth }) {
+async function getFlightPrices({ origin, destinations, departDate, returnDate }) {
   const results = await Promise.all(
     destinations.map(async (destination) => [
       destination,
-      await getFlightPrice({ origin, destination, departMonth }),
+      await getFlightPrice({ origin, destination, departDate, returnDate }),
     ])
   );
   return Object.fromEntries(results);
@@ -217,19 +219,33 @@ async function loadReferenceData() {
         if (c?.code) countryByCode.set(c.code, c.name || c.code);
       }
 
-      const cityByCode = new Map();
+      const byCode = new Map();
+      const byName = new Map();
       for (const c of Array.isArray(cities) ? cities : []) {
         if (!c?.code || !c?.name) continue;
-        cityByCode.set(c.code, {
+        const entry = {
+          iata: c.code,
           name: c.name,
           countryCode: c.country_code || null,
           country: c.country_code ? countryByCode.get(c.country_code) || null : null,
-        });
+        };
+        byCode.set(c.code, entry);
+
+        // Reverse index so the assistant can name a city we have not cached.
+        // Includes every translation the dump offers, so "Londra" resolves too.
+        const aliases = [c.name, ...Object.values(c.name_translations || {})];
+        for (const alias of aliases) {
+          if (typeof alias !== "string" || !alias.trim()) continue;
+          const key = normalizeName(alias);
+          if (!byName.has(key)) byName.set(key, entry);
+        }
       }
 
-      if (cityByCode.size === 0) throw new Error("boş şehir listesi");
-      console.log(`[travelpayouts] referans veri yüklendi (${locale}): ${cityByCode.size} şehir`);
-      return cityByCode;
+      if (byCode.size === 0) throw new Error("boş şehir listesi");
+      console.log(
+        `[travelpayouts] referans veri yüklendi (${locale}): ${byCode.size} şehir, ${byName.size} isim`
+      );
+      return { byCode, byName };
     } catch (e) {
       lastError = e;
       console.warn(`[travelpayouts] referans veri (${locale}) alınamadı: ${e.message}`);
@@ -238,7 +254,16 @@ async function loadReferenceData() {
   throw lastError || new Error("referans veri alınamadı");
 }
 
-/** IATA -> { name, country } index, or null when unavailable. */
+function normalizeName(text) {
+  return String(text)
+    .toLocaleLowerCase("tr-TR")
+    .replace(/ı/g, "i").replace(/ş/g, "s").replace(/ğ/g, "g")
+    .replace(/ü/g, "u").replace(/ö/g, "o").replace(/ç/g, "c")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/** @returns {Promise<{byCode:Map,byName:Map}|null>} */
 async function getCityIndex() {
   if (refPromise && Date.now() - refLoadedAt < REF_TTL_MS) return refPromise;
   refLoadedAt = Date.now();
@@ -251,11 +276,30 @@ async function getCityIndex() {
   return refPromise;
 }
 
+/**
+ * Resolves a free-form city name or IATA code to a catalog-shaped city entry.
+ * @returns {Promise<{iata:string,name:string,country:string|null}|null>}
+ */
+async function resolveCity(query) {
+  if (typeof query !== "string" || !query.trim()) return null;
+  const index = await getCityIndex();
+  if (!index) return null;
+
+  const raw = query.trim();
+  if (/^[A-Za-z]{3}$/.test(raw)) {
+    const byCode = index.byCode.get(raw.toUpperCase());
+    if (byCode) return byCode;
+  }
+  return index.byName.get(normalizeName(raw)) || null;
+}
+
 module.exports = {
   getFlightPrice,
   getFlightPrices,
   getCityDirections,
   getCityIndex,
+  resolveCity,
   isConfigured,
   parseOffers,
+  normalizeName,
 };

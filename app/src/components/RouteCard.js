@@ -9,7 +9,12 @@ export function RouteCard({ route, onPress }) {
       <Image source={{ uri: route.image }} style={styles.image} />
       <View style={styles.body}>
         <Text style={styles.name}>{route.name}</Text>
-        <Text style={styles.meta}>{route.nights} gece · kişi başı</Text>
+        <Text style={styles.meta}>
+          {route.dateLabel ? route.dateLabel : `${route.nights} gece · kişi başı`}
+        </Text>
+        {route.dateLabel ? (
+          <Text style={styles.meta}>{route.nights} gece · kişi başı</Text>
+        ) : null}
         <View style={styles.tagRow}>
           {route.directFlight ? (
             <View style={styles.tag}>

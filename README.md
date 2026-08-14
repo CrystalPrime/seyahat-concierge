@@ -106,8 +106,12 @@ npx expo start
 
 ## Ekranlar
 
-1. **Concierge** — Sohbet tarzı arama: "Mayıs ayında Cuma tatile çıkacağım, Pazar
-   dönerim, deniz kenarı olsun" gibi bir cümle yaz, en uygun 3 rota önerilir.
+1. **Concierge** — Sohbet tarzı arama. Asistan **önce tarih sorar**; gidiş-dönüş
+   tarihini öğrenmeden rota önermez. Tarih verdiğinde o tarihlere göre canlı
+   fiyat çeker, gece sayısını tarih aralığından hesaplar ve kartlarda
+   "12-19 Eylül 2026" gibi gerçek tarihi gösterir. İstediğin şehri
+   sorabilirsin — Keşfet'teki popüler rota listesiyle sınırlı değil; ülke
+   söylersen ("Amerika") somut şehirlere çevirir (New York, Miami, Los Angeles).
    Filtre chip'leri (Bütçe dostu / Aktarmasız uçuşlar / 5 yıldızlı otel) sonucu
    gerçekten yeniden hesaplar.
 2. **Keşfet** — Mevsimlik öne çıkan destinasyonlar, editörün seçimi, ve arama
@@ -122,9 +126,12 @@ npx expo start
 - Otel fiyatları hâlâ tahmini (otel API'si bağlı değil). Uçuş fiyatları canlı.
 - LLM sadece hangi destinasyonun uygun olduğuna karar veriyor; fiyatları
   görmüyor ve hesaplamıyor, fiyatlar backend'de canlı veriden ekleniyor.
-- Canlı destinasyon listesi varsayılan olarak en ucuz 18 rota ile sınırlı
-  (`CATALOG_SIZE` ile değiştirilebilir) ve 30 dakika önbelleklenir
-  (`CATALOG_TTL_MS`).
+- **Keşfet** ekranı en ucuz 18 rota ile sınırlı (`CATALOG_SIZE`) ve 30 dakika
+  önbellekli (`CATALOG_TTL_MS`) — bu yüzden orada uzak/pahalı destinasyonlar
+  (Amerika, Uzak Doğu) görünmez. **Concierge sohbetinde** ise böyle bir sınır
+  yok, istediğin şehri sorabilirsin.
+- Sohbette adı çözümlenemeyen ya da fiyat bulunamayan şehir için uydurma fiyat
+  gösterilmez; asistan bulamadığını söyler.
 - Şehir/ülke isimleri Travelpayouts'ta Türkçe yoksa İngilizce gelir
   (`TRAVELPAYOUTS_LOCALE` önce denenir, olmazsa `en`'e düşer). Katalogda elle
   tanımlı şehirler Türkçe isimlerini korur.
