@@ -13,6 +13,7 @@ export function DiscoverScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const [live, setLive] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -22,6 +23,7 @@ export function DiscoverScreen({ navigation }) {
         api.getConciergeSuggestions(),
       ]);
       setDestinations(destRes.destinations);
+      setLive(Boolean(destRes.live));
       setSuggestion(sugRes.fromHistory);
     } catch (e) {
       setError(e.message);
@@ -62,10 +64,16 @@ export function DiscoverScreen({ navigation }) {
           }
         >
           <Text style={styles.eyebrow}>KEŞFET</Text>
-          <Text style={styles.title}>Mayıs'ta Nereye Gidilir?</Text>
+          <Text style={styles.title}>
+            {live ? "İstanbul'dan Nereye Gidilir?" : "Mayıs'ta Nereye Gidilir?"}
+          </Text>
           <View style={styles.subtitleRow}>
             <View style={styles.dash} />
-            <Text style={styles.subtitle}>Mevsimin en iyi rotaları, seçilmiş rotalar</Text>
+            <Text style={styles.subtitle}>
+              {live
+                ? "Şu an gerçekten uçulan rotalar, canlı fiyatlarla"
+                : "Mevsimin en iyi rotaları, seçilmiş rotalar"}
+            </Text>
           </View>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}

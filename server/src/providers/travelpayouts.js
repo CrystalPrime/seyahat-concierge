@@ -124,4 +124,138 @@ async function getFlightPrices({ origin, destinations, departMonth }) {
   return Object.fromEntries(results);
 }
 
-module.exports = { getFlightPrice, getFlightPrices, isConfigured, parseOffers };
+/**
+ * Popular real routes from a city, cheapest ticket per destination.
+ * GET /v1/city-directions?origin=IST&currency=try
+ * Response: { success, data: { BCN: { destination, price, transfers, airline,
+ *   departure_at, return_at }, ... }, error, currency }
+ * @returns {Promise<Array<{destination:string,price:number,transfers:number,
+ *   airline:string|null,departureAt:string|null,returnAt:string|null}>|null>}
+ */
+async function getCityDirections({ origin }) {
+  if (!isConfigured()) return null;
+
+  const key = `directions:${origin}`;
+  const cached = readCache(key);
+  if (cached !== undefined) return cached;
+
+  const params = new URLSearchParams({ origin, currency: CURRENCY });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(`${BASE_URL}/v1/city-directions?${params.toString()}`, {
+      headers: { "X-Access-Token": TOKEN, Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.warn(`[travelpayouts] city-directions ${origin} HTTP ${res.status}`);
+      writeCache(key, null);
+      return null;
+    }
+    const body = await res.json();
+    if (!body?.success || !body?.data) {
+      console.warn(`[travelpayouts] city-directions ${origin} success=false`);
+      writeCache(key, null);
+      return null;
+    }
+    const routes = Object.entries(body.data)
+      .map(([iata, r]) => ({
+        destination: r?.destination || iata,
+        price: Number(r?.price),
+        transfers: Number.isFinite(Number(r?.transfers)) ? Number(r.transfers) : null,
+        airline: r?.airline || null,
+        departureAt: r?.departure_at || null,
+        returnAt: r?.return_at || null,
+      }))
+      .filter((r) => Number.isFinite(r.price) && r.price > 0)
+      .sort((a, b) => a.price - b.price);
+
+    writeCache(key, routes);
+    return routes;
+  } catch (e) {
+    const reason = e.name === "AbortError" ? `timeout (${TIMEOUT_MS}ms)` : e.message;
+    console.warn(`[travelpayouts] city-directions ${origin} başarısız: ${reason}`);
+    writeCache(key, null);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// City/country reference data. These are static JSON dumps (no token needed),
+// large enough that we download once and keep only the fields we use.
+const REF_LOCALE = process.env.TRAVELPAYOUTS_LOCALE || "en";
+const REF_TTL_MS = 24 * 60 * 60 * 1000;
+let refPromise = null;
+let refLoadedAt = 0;
+
+async function fetchJson(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS * 3);
+  try {
+    const res = await fetch(url, { headers: { Accept: "application/json" }, signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function loadReferenceData() {
+  const locales = [REF_LOCALE, "en"].filter((v, i, a) => a.indexOf(v) === i);
+  let lastError = null;
+
+  for (const locale of locales) {
+    try {
+      const [cities, countries] = await Promise.all([
+        fetchJson(`${BASE_URL}/data/${locale}/cities.json`),
+        fetchJson(`${BASE_URL}/data/${locale}/countries.json`),
+      ]);
+
+      const countryByCode = new Map();
+      for (const c of Array.isArray(countries) ? countries : []) {
+        if (c?.code) countryByCode.set(c.code, c.name || c.code);
+      }
+
+      const cityByCode = new Map();
+      for (const c of Array.isArray(cities) ? cities : []) {
+        if (!c?.code || !c?.name) continue;
+        cityByCode.set(c.code, {
+          name: c.name,
+          countryCode: c.country_code || null,
+          country: c.country_code ? countryByCode.get(c.country_code) || null : null,
+        });
+      }
+
+      if (cityByCode.size === 0) throw new Error("boş şehir listesi");
+      console.log(`[travelpayouts] referans veri yüklendi (${locale}): ${cityByCode.size} şehir`);
+      return cityByCode;
+    } catch (e) {
+      lastError = e;
+      console.warn(`[travelpayouts] referans veri (${locale}) alınamadı: ${e.message}`);
+    }
+  }
+  throw lastError || new Error("referans veri alınamadı");
+}
+
+/** IATA -> { name, country } index, or null when unavailable. */
+async function getCityIndex() {
+  if (refPromise && Date.now() - refLoadedAt < REF_TTL_MS) return refPromise;
+  refLoadedAt = Date.now();
+  refPromise = loadReferenceData().catch((e) => {
+    console.warn(`[travelpayouts] referans veri devre dışı: ${e.message}`);
+    refPromise = null;
+    refLoadedAt = 0;
+    return null;
+  });
+  return refPromise;
+}
+
+module.exports = {
+  getFlightPrice,
+  getFlightPrices,
+  getCityDirections,
+  getCityIndex,
+  isConfigured,
+  parseOffers,
+};

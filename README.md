@@ -14,11 +14,18 @@ onu besleyen Express backend'i.
   çalışmıyorsa veya zaman aşımına uğrarsa backend otomatik olarak eski kural tabanlı
   ayrıştırıcıya (`server/src/matching.js`, ay/gün/anahtar kelime eşleştirme) düşer —
   uygulama hiçbir zaman çökmez, sadece cevap kalitesi düşer.
+- **Destinasyonlar gerçek**: Keşfet ekranındaki şehirler artık elle yazılmıyor;
+  Travelpayouts'un `city-directions` ucundan İstanbul'dan **gerçekten uçulan**
+  popüler rotalar çekiliyor (`server/src/catalog.js`). Şehir/ülke isimleri
+  Travelpayouts'un referans veri dosyalarından geliyor.
 - **Uçuş fiyatları gerçek**: Travelpayouts (Aviasales) Data API'sinden canlı
   gidiş-dönüş fiyatı çekiliyor (`server/src/providers/travelpayouts.js`). Token
   girilmemişse veya API cevap vermezse katalogdaki tahmini fiyata düşer ve
   arayüzde "(tahmini)" olarak işaretlenir — yani hiçbir zaman uydurma fiyatı
   gerçekmiş gibi göstermez.
+- **`data/destinations.js` artık katalog değil, zenginleştirme verisi**: canlı
+  listede o şehir varsa oradaki Türkçe isim, tanıtım cümlesi, etiketler ve otel
+  tahmini kullanılır; tanımadığı şehirler nötr varsayılanlarla gelir.
 - **Otel fiyatları hâlâ tahmini**: Bir otel API'si bağlı değil.
   `server/src/data/destinations.js` içindeki `hotelPricePerNight` örnek veridir.
   Arayüzde uçuş ve otel kalemleri ayrı gösterilir, hangisinin gerçek olduğu bellidir.
@@ -115,9 +122,15 @@ npx expo start
 - Otel fiyatları hâlâ tahmini (otel API'si bağlı değil). Uçuş fiyatları canlı.
 - LLM sadece hangi destinasyonun uygun olduğuna karar veriyor; fiyatları
   görmüyor ve hesaplamıyor, fiyatlar backend'de canlı veriden ekleniyor.
-- Destinasyon kataloğu sabit (7 şehir). Travelpayouts rota fiyatı veriyor ama
-  "dünyadaki tüm şehirler" araması yapmıyor — yeni şehir eklemek için
-  `destinations.js`'e IATA koduyla eklemen yeterli.
+- Canlı destinasyon listesi varsayılan olarak en ucuz 18 rota ile sınırlı
+  (`CATALOG_SIZE` ile değiştirilebilir) ve 30 dakika önbelleklenir
+  (`CATALOG_TTL_MS`).
+- Şehir/ülke isimleri Travelpayouts'ta Türkçe yoksa İngilizce gelir
+  (`TRAVELPAYOUTS_LOCALE` önce denenir, olmazsa `en`'e düşer). Katalogda elle
+  tanımlı şehirler Türkçe isimlerini korur.
+- Canlı rotalarda mevsim/etiket bilgisi olmadığı için kural tabanlı eşleştirici
+  (Ollama kapalıyken devreye giren yedek) sadece elle tanımlı şehirleri
+  puanlayabilir. LLM açıkken tüm canlı şehirler arasından seçim yapılır.
 - Tek kullanıcı, giriş ekranı yok.
 - Yerel LLM'in hızı/kalitesi tamamen senin çalıştırdığın modele bağlı;
   `OLLAMA_TIMEOUT_MS` (varsayılan 45sn) içinde cevap gelmezse kural tabanlı

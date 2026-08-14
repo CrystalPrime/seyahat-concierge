@@ -1,5 +1,5 @@
 const express = require("express");
-const { destinations } = require("../data/destinations");
+const { getCatalog } = require("../catalog");
 const { searchRoutes, applyFilters, filtersFromChips } = require("../matching");
 const { ollamaChat } = require("../llm");
 const { buildPricedRoutes } = require("../pricing");
@@ -14,7 +14,6 @@ function catalogForPrompt(pool) {
     tagline: d.tagline,
     tags: d.tags,
     season: d.season,
-    hotelPricePerNight: d.hotelPricePerNight,
     directFlight: d.directFlight,
     hotelStars: d.hotelStars,
   }));
@@ -45,7 +44,7 @@ const VALID_MONTHS = new Set([
 
 async function llmSearch({ text, chipFilters, history }) {
   const filters = filtersFromChips(chipFilters);
-  const pool = applyFilters(destinations, filters);
+  const pool = applyFilters(await getCatalog(), filters);
 
   const messages = [
     { role: "system", content: systemPrompt() },
@@ -102,11 +101,12 @@ router.post("/search", async (req, res) => {
   }
 });
 
-router.get("/suggestions", (req, res) => {
-  const roma = destinations.find((d) => d.id === "roma");
+router.get("/suggestions", async (req, res) => {
+  const catalog = await getCatalog();
+  const pick = catalog.find((d) => d.id === "roma") || catalog[0];
   res.json({
-    fromHistory: roma
-      ? { destinationId: roma.id, name: roma.name, message: `Geçen ay ${roma.name}'ya baktın.` }
+    fromHistory: pick
+      ? { destinationId: pick.id, name: pick.name, message: `Geçen ay ${pick.name}'ya baktın.` }
       : null,
   });
 });

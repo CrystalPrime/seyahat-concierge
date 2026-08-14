@@ -1,4 +1,4 @@
-const { destinations } = require("./data/destinations");
+const { getCatalog } = require("./catalog");
 const { buildPricedRoutes } = require("./pricing");
 
 const MONTHS = [
@@ -132,7 +132,7 @@ async function searchRoutes({ text, chipFilters = [] }) {
     if (mapped) filters.add(mapped);
   }
 
-  let pool = applyFilters(destinations, filters);
+  let pool = applyFilters(await getCatalog(), filters);
 
   const scored = pool
     .map((dest) => ({ dest, score: scoreDestination(dest, { month, tags }) }))
